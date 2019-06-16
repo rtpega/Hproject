@@ -1,0 +1,605 @@
+---
+title: "QSAR biodegradation"
+date: "June, 2019"
+output:
+  pdf_document:
+    number_sections: true
+---
+
+```{r setup, include=FALSE , echo=FALSE}
+knitr::opts_chunk$set(echo=FALSE, error=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+#INTRODUCTION
+
+The [QSAR biodegradation dataset](https://archive.ics.uci.edu/ml/datasets/QSAR+biodegradation) was built in the Milano Chemometrics and QSAR Research Group. It is available in the UC Irvine Machine Learning Repository. The objective of this work is to obtain a model to classify the chemical compounds of said dataset into  ready (RB) or not ready (NRB) biodegradable molecules. To this end we have 41 molecular descriptors and 1 experimental class:
+
+
+
+1) SpMax_L: Leading eigenvalue from Laplace matrix 
+2) J_Dz: Balaban-like index from Barysz matrix weighted by Sanderson electronegativity 
+3) nHM: Number of heavy atoms 
+4) F01_N_N: Frequency of N-N at topological distance 1 
+5) F04_C_N: Frequency of C-N at topological distance 4 
+6) NssssC: Number of atoms of type ssssC 
+7) nCb_: Number of substituted benzene C(sp2) 
+8) C_percent: Percentage of C atoms 
+9) nCp: Number of terminal primary C(sp3) 
+10) nO: Number of oxygen atoms 
+11) F03_C_N: Frequency of C-N at topological distance 3 
+12) SdssC: Sum of dssC E-states 
+13) HyWi_B: Hyper-Wiener-like index (log function) from Burden matrix weighted by mass 
+14) LOC: Lopping centric index 
+15) SM6_L: Spectral moment of order 6 from Laplace matrix 
+16) F03_C_O: Frequency of C - O at topological distance 3 
+17) Me: Mean atomic Sanderson electronegativity (scaled on Carbon atom) 
+18) Mi: Mean first ionization potential (scaled on Carbon atom) 
+19) nN_N: Number of N hydrazines 
+20) nArNO2: Number of nitro groups (aromatic) 
+21) nCRX3: Number of CRX3 
+22) SpPosA_B: Normalized spectral positive sum from Burden matrix weighted by polarizability 
+23) nCIR: Number of circuits 
+24) B01_C_Br: Presence/absence of C - Br at topological distance 1 
+25) B03_C_Cl: Presence/absence of C - Cl at topological distance 3 
+26) N_073: Ar2NH / Ar3N / Ar2N-Al / R..N..R 
+27) SpMax_A: Leading eigenvalue from adjacency matrix (Lovasz-Pelikan index) 
+28) Psi_i_1d: Intrinsic state pseudoconnectivity index - type 1d 
+29) B04_C_Br: Presence/absence of C - Br at topological distance 4 
+30) SdO: Sum of dO E-states 
+31) TI2_L: Second Mohar index from Laplace matrix 
+32) nCrt: Number of ring tertiary C(sp3) 
+33) C_026: R--CX--R 
+34) F02_C_N: Frequency of C - N at topological distance 2 
+35) nHDon: Number of donor atoms for H-bonds (N and O) 
+36) SpMax_B: Leading eigenvalue from Burden matrix weighted by mass 
+37) Psi_i_A: Intrinsic state pseudoconnectivity index - type S average 
+38) nN: Number of Nitrogen atoms 
+39) SM6_B: Spectral moment of order 6 from Burden matrix weighted by mass 
+40) nArCOOR: Number of esters (aromatic) 
+41) nX: Number of halogen atoms 
+42) experimental class: ready biodegradable (RB) and not ready biodegradable (NRB)
+
+This is a standard supervised classification task: the labels are included in the training data, what we have to do is to train a model to learn to predict the labels from the features. The label is binary: RB or NRB.
+
+After a preliminary analysis of the dataset, we will try different classification models, also using different techniques (cross-validationk, normalization, PCA, tuning, staking...) in order to obtain the best performance from the algorithms and get the model that best suits us. 
+
+As for the metric to evaluate the models, we choose Accuracy.
+
+#DATA REVIEW
+
+```{r}
+# Load packages
+
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+if(!require(glmnet)) install.packages("glmnet", repos = "http://cran.us.r-project.org")
+
+
+
+
+```
+
+```{r}
+#Load data
+
+#dl<-read.csv(url("https://archive.ics.uci.edu/ml/machine-learning-databases/00254/biodeg.csv"), sep=";",header=FALSE)
+
+url <- "https://github.com/rtpega/Hproject/blob/master/biodeg.csv?raw=true"
+dl <- read.csv(url,sep=";",header=FALSE)
+   
+#Since the file has no header, we will assign the names to each variable
+
+
+names(dl)<-c("SpMax_L","J_Dz","nHM","F01_N_N","F04_C_N","NssssC","nCb_","C_percent","nCp","nO","F03_C_N","SdssC","HyWi_B","LOC","SM6_L","F03_C_O","Me","Mi","nN_N","nArNO2","nCRX3","SpPosA_B","nCIR","B01_C_Br","B03_C_Cl","N_073","SpMax_A","Psi_i_1d","B04_C_Br","SdO","TI2_L","nCrt","C_026","F02_C_N","nHDon","SpMax_B","Psi_i_A","nN","SM6_B","nArCOOR","nX","Eclass")
+
+```
+
+
+##Dimensions
+```{r}
+
+dim(dl)
+
+
+```
+The file has 1055 instances and 42 variables. 
+
+##Structure
+```{r}
+str(dl)
+
+```
+
+The dependent variable is a factor with 2 levels. The rest of the variables ara integer or numeric.
+
+##Dependent variable distribution
+
+```{r}
+y <- dl$Eclass
+cbind(freq=table(y), percentage=prop.table(table(y))*100)
+
+```
+
+There are 66% instances in the NRB class and 33% in the RB class. That is, the file is imbalance, but not so much that we have to rebalance the dataset.
+
+##Summarize Data
+```{r}
+summary(dl)
+```
+
+We can observe that some of the variables take few values diferent from 0; some take only positive values, but others take both positive and negative values. 
+
+
+
+
+#DATA VISUALIZATION
+
+In first place, we are going to calculate the correlations of the features. 
+
+```{r}
+# display the correlation matrix
+correlations <- cor(dl[,1:41])
+
+corrplot(correlations, order = "hclust", type = "upper",diag=TRUE,tl.pos = "td",tl.col = "black",tl.cex = 0.6, tl.srt = 90, sig.level = 0.01, insig = "blank")
+```
+
+We have some strong correlations:
+* SpMax_B with SM6B,  HyWi_B, SM6_L and SpMax_A.
+* B01_C_Cr with B04
+* SpMax_L with SM6_L and SpMax_A.
+* nCb_ with C_026 and C_percent
+* F04_C_N with F03_C_N , F02_C_N and nN
+* Me with Psi_i_A
+* nO with F03_C_O and SdO
+  
+Some of them have negative correlations. Such is the case of SpPosA_B and Mi and C_percent.
+
+Therefore, we could remove some of these variables, since the information they provide is redundant and some algorithms work better with  not highly correlated features.
+
+As Eclass is a qualitative variable, in order to obtain the Pearson's correlation, we transfort it into a quantitative varible. Its correlation with each of the features is:
+
+```{r}
+#Pearson correlation between Eclass and the features
+
+correlatinons2<-cor(cbind(dl[,1:41],Eclass=ifelse(dl$Eclass=='RB',1,0)))
+
+Eclass_cor<-correlatinons2[-42,42]
+
+print(Eclass_cor)
+```
+
+
+None of the variables is strongly correlated with the variable to be predicted, although some of them have a slight correlation, with Pearson coefficients between -0.39 and 0.17.
+
+As we can see in following the examples, the values that some of features take vary according to Eclass:
+
+```{r}
+#Boxplot correlated variables with Eclass
+p1<-ggplot(dl, aes(x=Eclass, y=SpMax_L)) + geom_boxplot()
+
+p2<-ggplot(dl, aes(x=Eclass, y=SpPosA_B)) + geom_boxplot()
+
+p3<-ggplot(dl, aes(x=Eclass, y=C_percent)) + geom_boxplot()
+
+grid.arrange(p1, p2,p3, nrow = 1)
+```
+
+
+In contrast, in less highly correlated features we see that the boxplots are very similar for both values of Eclass:
+
+```{r}
+#Boxplot uncorrelated variables with Eclass
+p1<-ggplot(dl, aes(x=Eclass, y=Me)) + geom_boxplot()
+
+p2<-ggplot(dl, aes(x=Eclass, y=F03_C_O)) + geom_boxplot()
+
+p3<-ggplot(dl, aes(x=Eclass, y=Mi)) + geom_boxplot()
+
+p4<-ggplot(dl, aes(x=Eclass, y=J_Dz)) + geom_boxplot()
+
+grid.arrange(p1, p2,p3,p4, nrow = 1)
+```
+
+
+
+#DATA CLEAN
+```{r}
+#Checking for NA values
+
+sapply(dl,function(x)(sum(is.na(x))))
+
+
+```
+
+
+There are not NA values
+
+#RESULTS
+
+We will try several linear and non-linear algorithms of the Caret package, using 10-fold cross-validation with 3 repeats. To evaluate them We will use the Accuracy and Kappa metrics.
+
+
+##Data split
+
+```{r}
+#Splitting the data into training and test dataset
+set.seed(727)
+trainIndex <- createDataPartition(dl$Eclass, p=0.70, list=FALSE)
+dataTrain <- dl[ trainIndex,]
+dataTest <- dl[-trainIndex,]
+```
+
+
+
+After dividing the original dataset, we verify that the RB / NRB proportion in the training set is similar to the original:
+
+```{r}
+#Frequency of each class of the dependant variable in the trainin set
+y0 <- dataTrain$Eclass
+cbind(freq=table(y), percentage=prop.table(table(y))*100)
+
+
+```
+  
+
+
+```{r}
+#10-fold cross-validation with 3 repeats 
+set.seed(727)
+trainControl <- trainControl(method="repeatedcv", number=10, repeats=3) 
+
+
+```
+
+##Basic models
+
+As a first step, we will evaluate our chosen algorithms. We will use 10-fold cross-validation with 3 repeats, without any tranformation or tuning. The first algorithms that we are going to try are:
+
+* k-Nearest Neighbors (KNN)
+* Linear Discriminant Analysis (LDA)
+* Penalized Linear Regression (GLMNET)
+* Classification and Regression Trees (CART)
+* Naive Bayes (NB) 
+* Support Vector Machines with Radial Basis Functions (SVM Radial)
+* Support Vector Machines with Linear Basis Functions (SVM Linear)
+
+
+```{r}
+
+#Knn
+set.seed(727)
+fit.knn_1 <- train(Eclass ~ ., method = "knn", data =dataTrain, metric="Accuracy",trControl=trainControl)
+
+#LDA
+set.seed(727)
+fit.lda_1 <- train(Eclass ~ ., method = "lda", data =dataTrain, metric="Accuracy",trControl=trainControl)
+
+#GLMNET 
+set.seed(727)
+fit.glmnet_1 <- train(Eclass ~ ., method = "glmnet", data =dataTrain,metric="Accuracy",trControl=trainControl)
+
+#CART
+
+set.seed(727)
+fit.cart_1 <- train(Eclass ~ ., method = "rpart", data =dataTrain, metric="Accuracy",trControl=trainControl)
+
+#Naive Bayes
+
+
+set.seed(727)
+fit.nb_1 <- train(Eclass ~ ., method = "nb", data =dataTrain, metric="Accuracy",trControl=trainControl)
+
+
+#SVM Radial
+
+
+set.seed(727)
+fit.svm_radial_1 <- train(Eclass ~ ., method = "svmRadial", data =dataTrain, metric="Accuracy",trControl=trainControl)
+
+
+#SVM Linear
+
+
+set.seed(727)
+fit.svm_linear_1 <- train(Eclass ~ ., method = "svmLinear", data =dataTrain, metric="Accuracy",trControl=trainControl)
+
+#Comparing results of the different algorithms.  
+
+results_1 <- resamples(list(LDA_1=fit.lda_1, GLMNET_1=fit.glmnet_1, KNN_1=fit.knn_1, CART_1=fit.cart_1, NB_1=fit.nb_1, SVM_linear_1=fit.svm_linear_1, SVM_radial_1=fit.svm_radial_1))
+summary(results_1) 
+dotplot(results_1)
+
+```
+
+Except CART and NB, all the other algorithms have a mean Accuracy above 80%. SVM linear (87.70%), GLMNET (87.56%) and SVM Radial (87.52%) have the  highest Accuracy. The same four also head the rank in terms of kappa values.
+
+
+##Applying transformations
+
+We know than some algorithms work better if the data is regularized. We are going to try again the previous algorithms, but applying regularizations. In this case, we are going to center and use the same scale for all the features:
+
+```{r}
+
+#Knn
+set.seed(727)
+fit.knn_2 <- train(Eclass ~ ., method = "knn", data =dataTrain, metric="Accuracy",
+                 trControl=trainControl,preProc=c("range"))
+
+#LDA
+set.seed(727)
+fit.lda_2 <- train(Eclass ~ ., method = "lda", data =dataTrain, metric="Accuracy",
+                 trControl=trainControl,preProc=c("range"))
+
+#GLMNET 
+set.seed(727)
+fit.glmnet_2 <- train(Eclass ~ ., method = "glmnet", data =dataTrain, metric="Accuracy",
+                    trControl=trainControl,preProc=c("range"))
+
+#CART
+
+set.seed(727)
+fit.cart_2 <- train(Eclass ~ ., method = "rpart", data =dataTrain, metric="Accuracy",
+                  trControl=trainControl,preProc=c("range"))
+
+#Naive Bayes
+
+
+set.seed(727)
+fit.nb_2 <- train(Eclass ~ ., method = "nb", data =dataTrain, metric="Accuracy",
+                trControl=trainControl,preProc=c("range"))
+
+
+#SVM Radial
+
+
+set.seed(727)
+fit.svm_radial_2 <- train(Eclass ~ ., method = "svmRadial", data =dataTrain, metric="Accuracy",
+                        trControl=trainControl,preProc=c("range"))
+
+
+#SVM Linear
+
+
+set.seed(727)
+fit.svm_linear_2 <- train(Eclass ~ ., method = "svmLinear", data =dataTrain, metric="Accuracy",
+                        trControl=trainControl,preProc=c("range"))
+
+#Comparing results of the different algorithms.
+
+results_2 <- resamples(list(LDA_2=fit.lda_2, GLMNET_2=fit.glmnet_2, KNN_2=fit.knn_2, CART_2=fit.cart_2, NB_2=fit.nb_2, SVM_linear_2=fit.svm_linear_2, SVM_radial_2=fit.svm_radial_2))
+summary(results_2) 
+dotplot(results_2)
+```
+
+With this transformation, KNN has improved from 81.08% to 86.03%, and NB from 78.10% to 80.45%. The Accuracy of the other algorithms is the same than before the transformation.
+
+We could try a PCA transformation, too, to avoid correlated attributes:
+
+```{r}
+
+#Knn
+set.seed(727)
+fit.knn_3 <- train(Eclass ~ ., method = "knn", data =dataTrain, metric="Accuracy",
+                 trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+#LDA
+set.seed(727)
+fit.lda_3 <- train(Eclass ~ ., method = "lda", data =dataTrain, metric="Accuracy",
+                 trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+#GLMNET 
+set.seed(727)
+fit.glmnet_3 <- train(Eclass ~ ., method = "glmnet", data =dataTrain, metric="Accuracy",
+                    trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+#CART
+
+set.seed(727)
+fit.cart_3 <- train(Eclass ~ ., method = "rpart", data =dataTrain, metric="Accuracy",
+                  trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+#Naive Bayes
+
+
+set.seed(727)
+fit.nb_3 <- train(Eclass ~ ., method = "nb", data =dataTrain, metric="Accuracy",
+                trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+
+#SVM Radial
+
+
+set.seed(727)
+fit.svm_radial_3 <- train(Eclass ~ ., method = "svmRadial", data =dataTrain, metric="Accuracy",
+                        trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+
+#SVM Linear
+
+
+set.seed(727)
+fit.svm_linear_3 <- train(Eclass ~ ., method = "svmLinear", data =dataTrain, metric="Accuracy",
+                        trControl=trainControl,preProc=c("center", "scale", "pca"))
+
+#Comparing results of the different algorithms.
+
+results_3 <- resamples(list(LDA_3=fit.lda_3, GLMNET_3=fit.glmnet_3, KNN_3=fit.knn_3, CART_3=fit.cart_3, NB_3=fit.nb_3, SVM_linear_3=fit.svm_linear_3, SVM_radial_3=fit.svm_radial_3))
+summary(results_3) 
+dotplot(results_3)
+
+```
+In this case we could see improvements  in the values of KNN from 86.03% to 86.35%, CART from 77.61% to 79.27%, and SVM Radial from 87.52% to 87.74%. All the other cases show worse values.
+
+We could conclude that some transformations work better with some algorithms than with others.
+
+##Tuning algorithms
+
+Taking into account the previous results, we will take the two best algorithms and modify their parameters in order to get better predictions.
+
+The SVM implementation has two parameters that we can tune: C and sigma. We will try values around the ones that got us the previous best result for this algorithm.
+
+We do the same with the two parameters that can be tuned in the implementation of GMNLT.
+
+```{r}
+
+#SVM Radial
+grid <- expand.grid(sigma =seq(0.05,0.1,0.01), C = seq(0.9,1.4,0.1))
+
+set.seed(727)
+fit.svm_radial_4 <- train(Eclass ~ ., method = "svmRadial", data =dataTrain, metric="Accuracy",
+                        trControl=trainControl,preProc=c("range"),tuneGrid = grid, tuneLength = 10)
+
+print("SVM RADIAL")
+plot(fit.svm_radial_4)
+
+
+#GLMNET 
+
+grid2 <- expand.grid(alpha = seq(0.001,0.4,0.01), lambda = seq(0.001, 0.015, length = 100))
+
+set.seed(727)
+fit.glmnet_4 <- train(Eclass ~ ., method = "glmnet", data =dataTrain, metric="Accuracy",
+                    trControl=trainControl,preProc=c("range"),tuneGrid = grid2)
+
+
+results_4 <- resamples(list( GLMNET_4=fit.glmnet_4, SVM_radial_4=fit.svm_radial_4))
+print("GLMNET")
+plot(fit.glmnet_4)
+```
+
+After repeating the process several times, adjusting the parameters, we choose the optimal ones.
+
+```{r}
+
+summary(results_4) 
+dotplot(results_4)
+
+```
+
+In both cases, the tuning makes a small difference. With GLMNET we go from 87.56% to 87.74%. In the SVM Radial case, we go from 87.52% to 88.46%.
+
+
+We could try too some ensemble methods:
+
+* Random Forest (RF)
+* Bagged CART (Treebag)  
+
+```{r}
+#Ensemble methods
+
+set.seed(727)
+fit.rf <- train(Eclass ~ ., method = "rf", data =dataTrain, metric="Accuracy",
+
+                                trControl=trainControl,preProc=c("BoxCox"))
+
+fit.treebag<- train(Eclass ~ ., method = "treebag", data =dataTrain, metric="Accuracy",
+                trControl=trainControl,preProc=c("BoxCox"))
+
+
+
+
+results_5 <- resamples(list( RF=fit.rf, TREEBAG=fit.treebag))
+
+#Comparing results of the different algorithms.
+
+summary(results_5) 
+
+```
+
+Comparing these results with those of the previous algorithms, we see that the Accuracy values are better now than what we get with some of the previous algorithms.
+
+##Validation
+
+Our best model until now is the tuned SVM Radial. In the next steps we will calculate the confusion matrix and some more metrics using de test dataset.
+
+
+```{r}
+#Prediccion of SVM Radial and Confusion matrix
+
+pred.svm_radial_4 <- predict(fit.svm_radial_4, newdata=dataTest) 
+confusionMatrix(pred.svm_radial_4, dataTest$Eclass)
+
+```
+Of the 209 cases of NRB, they are correctly predicted as NRB 187, and incorrectly, 23.
+Of the 106 cases of RB, they are correctly predicted as RB 83 and incorrectly 22.
+
+The Accuracy in the validation dataset is 85.71%, quite similar to the one obteined in the train dataset. Sensitivity (in this case the probability of predicting NRB when NRB), is quite high (89.47%). Specificity (in this case, the probability of not predicting RB when it is not RB) is slightly lower, but it remains an more than acceptable value (78.30%). Balanced Accuracy is 83.89%.
+
+We can see also the importance of each feature in this model:
+
+```{r}
+#Variable importance
+var_imp<-varImp(fit.svm_radial_4, scale = TRUE)
+
+plot(var_imp,top = 25)
+
+```
+
+
+Could the result of the tuned SVM Radial model be improved? We can use another strategy: Stacking Algorithms. It consists in combining the predictions of several sub-models. It is better that the results of these sub-models have low correlation:
+
+```{r}
+# Models correlation
+
+results<-resamples(list(SVM_rad_4=fit.svm_radial_1,SVM_lin_1=fit.svm_linear_1,RF=fit.rf,GLMNET_4=fit.glmnet_4,TREEBAG=fit.treebag,KNN_2=fit.knn_2,LDA_1=fit.lda_1,NB_3=fit.nb_3,CART_3=fit.cart_3))
+modelCor(results)
+
+corrplot(modelCor(results))
+
+
+```
+We could take as submodels SVM with a radial function (the best one so far) and some others with low correlation with it. For example, Treebag and Cart.
+
+
+```{r}
+#Stacking (mayority vote): SVM Radial, treebag and CART
+
+
+pred.svm_radial_4 <- predict(fit.svm_radial_4, newdata=dataTest) 
+pred.treebag <- predict(fit.treebag, newdata=dataTest) 
+pred.cart_3 <- predict(fit.cart_3, newdata=dataTest) 
+
+prediccion<-as.factor(ifelse(pred.svm_radial_4=='NRB' & pred.treebag=='NRB','NRB',ifelse(pred.svm_radial_4=='NRB' & pred.cart_3=='NRB','NRB',ifelse(pred.treebag=='NRB' & pred.cart_3=='NRB','NRB','RB'))))
+
+confusionMatrix(prediccion, dataTest$Eclass)
+```
+The Accuracy is lightly better (86.03%), as well as Balanced Accuray (84.36%)
+
+We could try 3 other models, with no so good accuracy in the trainset as SVM RADIAL, but with a very low correlationship between them: RF, Treebag and GLMNET: 
+
+
+```{r}
+#Stacking (mayority vote): Random Forest, treebag and glmnet
+
+pred.rf <- predict(fit.rf, newdata=dataTest) 
+pred.treebag <- predict(fit.treebag, newdata=dataTest) 
+pred.glmnet_4 <- predict(fit.glmnet_4, newdata=dataTest) 
+
+prediccion<-as.factor(ifelse(pred.rf=='NRB' & pred.treebag=='NRB','NRB',ifelse(pred.rf=='NRB' & pred.glmnet_4=='NRB','NRB',ifelse(pred.treebag=='NRB' & pred.glmnet_4=='NRB','NRB','RB'))))
+
+confusionMatrix(prediccion, dataTest$Eclass)
+```
+The Accuracy in this case is 87.62%, that is, an improvement of 1%. Balanced Accuracy has improved, too,and now is 86.25%.
+
+When we combine the predictions of these models with low correlation using staking, we obtain a better Accuracy than using our previous best model: combining models that are skillful in different ways we could improve our prediction.
+
+Sensitivity is slightly lower than in the previous case, but Specifity is higher.   
+
+#CONCLUSION
+
+We have built and tested several models. From the initial models, applying various techniques, the values of the evaluation variable have been improved, although in no case has the improvement been extremely substantial.
+The best result has been achieved by combining three submodels: Random Forest (RF),  Bagged CART (Treebag) and Penalized Linear Regression (GLMNET). Although individually each of these models offered results not as good as others (for example, SVM  with Radial Basis Functions), the majority vote ensemble produces a model with a considerable improvement over the sub-models.
+
+As we have seen, the dataset is very slightly unbalanced (there are more NRB than RB records), so a priori there could be other metrics that offer better results int the models evaluation than Accuracy. But after reviewing the confusion matrix of our last model, we could see that the values of Accuracy (87.62%) and  Balance Accuracy (86.25%) are quite good. Even so, other possibilities could be explored using other metrics to evaluate the models, such as ROAC.
+
+
+
+#REFERENCES
+
+* Irizzary, Rafael.(2019). Introduction to Data Science. https://rafalab.github.io/dsbook/
+
+* Brownlee, Jason. (2017).Machine Learning Mastery With R. https://machinelearningmastery.com/machine-learning-with-r/
+ 
